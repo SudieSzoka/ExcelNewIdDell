@@ -6,6 +6,7 @@
     <title>Excel文件处理工具</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" href="kos.png">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         
@@ -70,6 +71,7 @@
         <div class="text-center mb-8">
             <h1 class="text-4xl font-bold text-gray-800 mb-2">Excel文件处理工具</h1>
             <p class="text-gray-600">高效处理和对比Excel文件数据</p>
+            <p class="text-gray-600"></p>会忽略以Activity开头的表格，以及包含Translate的表格</p>
         </div>
         
         <!-- 文件选择区域 -->
@@ -161,7 +163,7 @@
                     <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
-                    下载结果文件
+                    下载所有工作簿
                 </button>
                 <button id="resetBtn" class="neumorphism px-6 py-3 rounded-xl font-semibold text-gray-800 hover:shadow-lg transition-all duration-300">
                     重新开始
@@ -427,29 +429,49 @@
                     let firstSheetFirst6Rows = [];
                     let foundFirstSheet = false;
                     
-                    // 遍历所有不以$开头的工作表
+                    // 遍历所有工作表，忽略以$开头、以Activity开头、包含Translate的表格
+                    let ignoredSheets = [];
+                    let processedSheets = [];
+                    
                     workbook.SheetNames.forEach(sheetName => {
-                        if (!sheetName.startsWith('$') && !foundFirstSheet) {
-                            const worksheet = workbook.Sheets[sheetName];
-                            const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                        // 检查是否应该忽略该工作表
+                        const shouldIgnore = sheetName.startsWith('$') || 
+                                           sheetName.startsWith('Activity') || 
+                                           sheetName.includes('Translate');
+                        
+                        if (shouldIgnore) {
+                            ignoredSheets.push(sheetName);
+                        } else {
+                            processedSheets.push(sheetName);
                             
-                            // 保存前6行数据，确保数据完整性
-                            firstSheetFirst6Rows = data.slice(0, 6).map(row => {
-                                if (Array.isArray(row)) {
-                                    return row.map(cell => cell !== undefined && cell !== null ? cell : '');
-                                }
-                                return row;
-                            });
-                            foundFirstSheet = true;
-                            
-                            // 处理工作表数据
-                            result[fileName][sheetName] = this.processSheetData(data, sheetName);
-                        } else if (!sheetName.startsWith('$')) {
-                            const worksheet = workbook.Sheets[sheetName];
-                            const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-                            result[fileName][sheetName] = this.processSheetData(data, sheetName);
+                            if (!foundFirstSheet) {
+                                const worksheet = workbook.Sheets[sheetName];
+                                const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                                
+                                // 保存前6行数据，确保数据完整性
+                                firstSheetFirst6Rows = data.slice(0, 6).map(row => {
+                                    if (Array.isArray(row)) {
+                                        return row.map(cell => cell !== undefined && cell !== null ? cell : '');
+                                    }
+                                    return row;
+                                });
+                                foundFirstSheet = true;
+                                
+                                // 处理工作表数据
+                                result[fileName][sheetName] = this.processSheetData(data, sheetName);
+                            } else {
+                                const worksheet = workbook.Sheets[sheetName];
+                                const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                                result[fileName][sheetName] = this.processSheetData(data, sheetName);
+                            }
                         }
                     });
+                    
+                    // 记录忽略的工作表信息
+                    if (ignoredSheets.length > 0) {
+                        this.log(`文件 ${fileName}: 忽略工作表 [${ignoredSheets.join(', ')}]`);
+                    }
+                    this.log(`文件 ${fileName}: 处理工作表 [${processedSheets.join(', ')}]`);
                     
                     // 保存前6行数据到文件对象中
                     file.firstSheetFirst6Rows = firstSheetFirst6Rows;
@@ -563,73 +585,109 @@
             async generateResultFile(processedResult) {
                 this.log('生成Excel文件...');
                 
-                const workbook = XLSX.utils.book_new();
-                
+                // 收集所有需要处理的数据
+                const allData = [];
                 Object.keys(processedResult.newIds).forEach(fileName => {
                     const data = processedResult.newIds[fileName];
                     if (data.length > 0) {
-                        // 获取当前处理的Excel文件的第一个非$开头的页签的前6行
-                        const firstSheetData = this.getFirstSheetFirst6Rows(fileName);
-                        
-                        // 创建新的工作表数据
-                        const newSheetData = [];
-                        
-                        // 先添加前6行（保持原始数组格式）
-                        if (firstSheetData.length > 0) {
-                            newSheetData.push(...firstSheetData);
-                        }
-                        
-                        // 添加处理后的数据（排除id列）
-                        data.forEach(row => {
-                            // 直接使用数组格式的行数据
-                            newSheetData.push(row);
+                        allData.push({
+                            fileName: fileName,
+                            data: data,
+                            firstSheetData: this.getFirstSheetFirst6Rows(fileName)
                         });
-                        
-                        // 修改第一行第二列的内容为复制数据第一行的第一个列的值
-                        if (newSheetData.length > 0 && data.length > 0) {
-                            const firstDataRow = data[0];
-                            const firstColumnValue = firstDataRow[0] || ''; // 第一列的值
-                            
-                            // 确保第一行存在且至少有2列
-                            if (newSheetData[0] && Array.isArray(newSheetData[0])) {
-                                if (newSheetData[0].length < 2) {
-                                    // 如果第一行少于2列，扩展它
-                                    while (newSheetData[0].length < 2) {
-                                        newSheetData[0].push('');
-                                    }
-                                }
-                                newSheetData[0][1] = firstColumnValue;
-                            }
-                        }
-                        
-                        // 使用 XLSX.utils.aoa_to_sheet 来处理数组格式数据
-                        const worksheet = XLSX.utils.aoa_to_sheet(newSheetData);
-                        
-                        // 设置列宽，确保数据能够正常显示
-                        const maxCols = Math.max(...newSheetData.map(row => row.length));
-                        const colWidths = [];
-                        for (let i = 0; i < maxCols; i++) {
-                            colWidths.push({ width: 15 }); // 设置默认列宽
-                        }
-                        worksheet['!cols'] = colWidths;
-                        
-                        // 设置行高，确保前6行有合适的行高
-                        const rowHeights = [];
-                        for (let i = 0; i < newSheetData.length; i++) {
-                            if (i < 6) {
-                                rowHeights.push({ hpt: 20 }); // 前6行设置20磅行高
-                            } else {
-                                rowHeights.push({ hpt: 16 }); // 其他行设置16磅行高
-                            }
-                        }
-                        worksheet['!rows'] = rowHeights;
-                        
-                        XLSX.utils.book_append_sheet(workbook, worksheet, fileName);
-                        this.log(`添加工作表: ${fileName} (${newSheetData.length} 行数据)`);
                     }
                 });
                 
-                this.processedData = workbook;
+                // 按200个页签分表
+                const SHEETS_PER_WORKBOOK = 200;
+                const workbooks = [];
+                let currentWorkbook = null;
+                let currentSheetCount = 0;
+                let workbookIndex = 1;
+                
+                for (let i = 0; i < allData.length; i++) {
+                    const item = allData[i];
+                    
+                    // 如果当前工作簿不存在或已达到200个页签限制，创建新的工作簿
+                    if (!currentWorkbook || currentSheetCount >= SHEETS_PER_WORKBOOK) {
+                        currentWorkbook = XLSX.utils.book_new();
+                        currentSheetCount = 0;
+                        workbooks.push({
+                            workbook: currentWorkbook,
+                            index: workbookIndex,
+                            sheets: []
+                        });
+                        this.log(`创建第 ${workbookIndex} 个工作簿`);
+                        workbookIndex++;
+                    }
+                    
+                    // 添加工作表到当前工作簿
+                    const newSheetData = [];
+                    
+                    // 先添加前6行（保持原始数组格式）
+                    if (item.firstSheetData.length > 0) {
+                        newSheetData.push(...item.firstSheetData);
+                    }
+                    
+                    // 添加处理后的数据
+                    item.data.forEach(row => {
+                        newSheetData.push(row);
+                    });
+                    
+                    // 修改第一行第二列的内容为复制数据第一行的第一个列的值
+                    if (newSheetData.length > 0 && item.data.length > 0) {
+                        const firstDataRow = item.data[0];
+                        const firstColumnValue = firstDataRow[0] || '';
+                        
+                        if (newSheetData[0] && Array.isArray(newSheetData[0])) {
+                            if (newSheetData[0].length < 2) {
+                                while (newSheetData[0].length < 2) {
+                                    newSheetData[0].push('');
+                                }
+                            }
+                            newSheetData[0][1] = firstColumnValue;
+                        }
+                    }
+                    
+                    // 创建工作表
+                    const worksheet = XLSX.utils.aoa_to_sheet(newSheetData);
+                    
+                    // 设置列宽
+                    const maxCols = Math.max(...newSheetData.map(row => row.length));
+                    const colWidths = [];
+                    for (let j = 0; j < maxCols; j++) {
+                        colWidths.push({ width: 15 });
+                    }
+                    worksheet['!cols'] = colWidths;
+                    
+                    // 设置行高
+                    const rowHeights = [];
+                    for (let j = 0; j < newSheetData.length; j++) {
+                        if (j < 6) {
+                            rowHeights.push({ hpt: 20 });
+                        } else {
+                            rowHeights.push({ hpt: 16 });
+                        }
+                    }
+                    worksheet['!rows'] = rowHeights;
+                    
+                    // 添加工作表，表名加上序号
+                    const sheetName = `${i + 1}_${item.fileName}`;
+                    XLSX.utils.book_append_sheet(currentWorkbook, worksheet, sheetName);
+                    currentSheetCount++;
+                    
+                    // 记录工作表信息
+                    workbooks[workbooks.length - 1].sheets.push({
+                        name: sheetName,
+                        originalName: item.fileName,
+                        rowCount: newSheetData.length
+                    });
+                    
+                    this.log(`添加工作表: ${sheetName} (${newSheetData.length} 行数据) 到第 ${workbooks.length} 个工作簿`);
+                }
+                
+                this.processedData = workbooks;
+                this.log(`总共创建了 ${workbooks.length} 个工作簿，包含 ${allData.length} 个工作表`);
             }
             
             getFirstSheetFirst6Rows(fileName) {
@@ -652,9 +710,10 @@
                 document.getElementById('resultSection').classList.remove('hidden');
                 
                 const totalNewRecords = Object.values(processedResult.summary).reduce((sum, count) => sum + count, 0);
+                const totalWorkbooks = this.processedData.length;
                 
                 const summaryHtml = `
-                    <div class="grid md:grid-cols-3 gap-4">
+                    <div class="grid md:grid-cols-4 gap-4 mb-6">
                         <div class="bg-blue-50 p-4 rounded-lg">
                             <div class="text-2xl font-bold text-blue-600">${processedResult.totalProcessed}</div>
                             <div class="text-sm text-gray-600">总处理记录数</div>
@@ -667,15 +726,45 @@
                             <div class="text-2xl font-bold text-purple-600">${Object.keys(processedResult.summary).length}</div>
                             <div class="text-sm text-gray-600">处理文件数</div>
                         </div>
+                        <div class="bg-orange-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-orange-600">${totalWorkbooks}</div>
+                            <div class="text-sm text-gray-600">生成工作簿数</div>
+                        </div>
                     </div>
-                    <div class="mt-4">
-                        <h4 class="font-semibold mb-2">各文件新增统计:</h4>
-                        ${Object.entries(processedResult.summary).map(([fileName, count]) => 
-                            `<div class="flex justify-between bg-gray-50 p-2 rounded mb-1">
-                                <span>${fileName}</span>
-                                <span class="font-semibold">${count} 条</span>
-                            </div>`
-                        ).join('')}
+                    
+                    <div class="mb-6">
+                        <h4 class="font-semibold mb-3">各文件新增统计:</h4>
+                        <div class="grid md:grid-cols-2 gap-4">
+                            ${Object.entries(processedResult.summary).map(([fileName, count]) => 
+                                `<div class="flex justify-between bg-gray-50 p-3 rounded">
+                                    <span class="font-medium">${fileName}</span>
+                                    <span class="font-semibold text-green-600">${count} 条</span>
+                                </div>`
+                            ).join('')}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-6">
+                        <h4 class="font-semibold mb-3">工作簿分表详情:</h4>
+                        <div class="space-y-3">
+                            ${this.processedData.map((workbookInfo, index) => `
+                                <div class="bg-gray-50 p-4 rounded-lg">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <h5 class="font-semibold text-gray-800">第 ${workbookInfo.index} 册</h5>
+                                        <span class="text-sm text-gray-600">包含 ${workbookInfo.sheets.length} 个工作表</span>
+                                    </div>
+                                    <div class="text-sm text-gray-600">
+                                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                            ${workbookInfo.sheets.map(sheet => 
+                                                `<div class="bg-white p-2 rounded text-xs">
+                                                    ${sheet.name} (${sheet.rowCount}行)
+                                                </div>`
+                                            ).join('')}
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
                 `;
                 
@@ -684,18 +773,39 @@
             }
             
             downloadResult() {
-                if (!this.processedData) {
+                if (!this.processedData || !Array.isArray(this.processedData)) {
                     alert('没有可下载的数据');
                     return;
                 }
+                
                 // 获取当前时间，精确到分
                 const now = new Date();
                 const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
                 const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
-                const fileName = `合版本提取数据_${dateStr}_${timeStr}.xlsx`;
                 
-                XLSX.writeFile(this.processedData, fileName);
-                this.log(`文件已下载: ${fileName}`);
+                // 批量下载所有工作簿
+                this.processedData.forEach((workbookInfo, index) => {
+                    const fileName = `合版本提取数据_第${workbookInfo.index}册_${dateStr}_${timeStr}.xlsx`;
+                    
+                    // 创建下载链接
+                    const blob = XLSX.write(workbookInfo.workbook, { bookType: 'xlsx', type: 'blob' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = fileName;
+                    
+                    // 触发下载
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    // 释放URL对象
+                    setTimeout(() => URL.revokeObjectURL(url), 100);
+                    
+                    this.log(`下载完成: ${fileName} (包含 ${workbookInfo.sheets.length} 个工作表)`);
+                });
+                
+                this.log(`所有 ${this.processedData.length} 个工作簿下载完成！`);
             }
             
             reset() {
@@ -714,6 +824,10 @@
                 document.getElementById('resultSection').classList.add('hidden');
                 
                 this.checkCanProcess();
+                
+                // 重置进度条
+                document.getElementById('progressBar').style.width = '0%';
+                document.getElementById('progressText').textContent = '准备中...';
             }
         }
         
