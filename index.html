@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel文件处理工具</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; }
+        
+        .glass {
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        
+        .neumorphism {
+            background: linear-gradient(145deg, #f0f0f0, #cacaca);
+            box-shadow: 20px 20px 60px #bebebe, -20px -20px 60px #ffffff;
+        }
+        
+        .neumorphism-inset {
+            background: linear-gradient(145deg, #cacaca, #f0f0f0);
+            box-shadow: inset 20px 20px 60px #bebebe, inset -20px -20px 60px #ffffff;
+        }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .progress-bar {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+        }
+        
+        .file-drop {
+            border: 2px dashed #667eea;
+            transition: all 0.3s ease;
+        }
+        
+        .file-drop:hover {
+            border-color: #764ba2;
+            background: rgba(102, 126, 234, 0.05);
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200">
+    <div class="container mx-auto px-4 py-8">
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">Excel文件处理工具</h1>
+            <p class="text-gray-600">高效处理和对比Excel文件数据</p>
+        </div>
+        
+        <!-- 文件选择区域 -->
+        <div class="grid md:grid-cols-2 gap-6 mb-8">
+            <!-- New文件夹 -->
+            <div class="neumorphism rounded-2xl p-6">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                    <svg class="w-6 h-6 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                    New 文件夹
+                </h3>
+                <div class="file-drop rounded-lg p-6 text-center">
+                    <input type="file" id="newFiles" multiple accept=".xlsx" class="hidden">
+                    <label for="newFiles" class="cursor-pointer">
+                        <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                        <p class="text-gray-600">点击选择或拖拽Excel文件</p>
+                        <p class="text-sm text-gray-400 mt-1">支持 .xlsx 格式</p>
+                    </label>
+                </div>
+                <div id="newFilesList" class="mt-4"></div>
+            </div>
+            
+            <!-- Old文件夹 -->
+            <div class="neumorphism rounded-2xl p-6">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                    <svg class="w-6 h-6 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"></path>
+                    </svg>
+                    Old 文件夹
+                </h3>
+                <div class="file-drop rounded-lg p-6 text-center">
+                    <input type="file" id="oldFiles" multiple accept=".xlsx" class="hidden">
+                    <label for="oldFiles" class="cursor-pointer">
+                        <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                        <p class="text-gray-600">点击选择或拖拽Excel文件</p>
+                        <p class="text-sm text-gray-400 mt-1">支持 .xlsx 格式</p>
+                    </label>
+                </div>
+                <div id="oldFilesList" class="mt-4"></div>
+            </div>
+        </div>
+        
+        <!-- 处理按钮 -->
+        <div class="text-center mb-8">
+            <button id="processBtn" class="neumorphism px-8 py-4 rounded-xl font-semibold text-gray-800 hover:shadow-lg transition-all duration-300 disabled:opacity-50">
+                <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+                开始处理
+            </button>
+        </div>
+        
+        <!-- 进度条 -->
+        <div id="progressSection" class="neumorphism-inset rounded-xl p-6 mb-8 hidden">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">处理进度</h3>
+            <div class="bg-gray-300 rounded-full h-3 overflow-hidden">
+                <div id="progressBar" class="progress-bar h-full rounded-full" style="width: 0%"></div>
+            </div>
+            <div id="progressText" class="text-sm text-gray-600 mt-2">准备中...</div>
+        </div>
+        
+        <!-- 处理日志 -->
+        <div id="logSection" class="neumorphism-inset rounded-xl p-6 mb-8 hidden">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">处理日志</h3>
+            <div id="logContainer" class="bg-gray-900 text-green-400 p-4 rounded-lg max-h-60 overflow-y-auto font-mono text-sm"></div>
+        </div>
+        
+        <!-- 结果展示 -->
+        <div id="resultSection" class="neumorphism rounded-2xl p-6 hidden">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">处理结果</h3>
+            <div id="resultSummary" class="mb-4"></div>
+            <div class="flex gap-4">
+                <button id="downloadBtn" class="gradient-bg text-white px-6 py-3 rounded-xl font-semibold hover:shadow-lg transition-all duration-300">
+                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    下载结果文件
+                </button>
+                <button id="resetBtn" class="neumorphism px-6 py-3 rounded-xl font-semibold text-gray-800 hover:shadow-lg transition-all duration-300">
+                    重新开始
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        class ExcelProcessor {
+            constructor() {
+                this.newFiles = [];
+                this.oldFiles = [];
+                this.processedData = null;
+                this.init();
+            }
+            
+            init() {
+                this.bindEvents();
+            }
+            
+            bindEvents() {
+                document.getElementById('newFiles').addEventListener('change', (e) => {
+                    this.handleFileSelection(e, 'new');
+                });
+                
+                document.getElementById('oldFiles').addEventListener('change', (e) => {
+                    this.handleFileSelection(e, 'old');
+                });
+                
+                document.getElementById('processBtn').addEventListener('click', () => {
+                    this.startProcessing();
+                });
+                
+                document.getElementById('downloadBtn').addEventListener('click', () => {
+                    this.downloadResult();
+                });
+                
+                document.getElementById('resetBtn').addEventListener('click', () => {
+                    this.reset();
+                });
+            }
+            
+            handleFileSelection(event, type) {
+                const files = Array.from(event.target.files);
+                if (type === 'new') {
+                    this.newFiles = files;
+                    this.displayFileList('newFilesList', files);
+                } else {
+                    this.oldFiles = files;
+                    this.displayFileList('oldFilesList', files);
+                }
+                
+                this.checkCanProcess();
+            }
+            
+            displayFileList(containerId, files) {
+                const container = document.getElementById(containerId);
+                container.innerHTML = files.map(file => `
+                    <div class="bg-white rounded-lg p-3 mb-2 shadow">
+                        <div class="flex items-center">
+                            <svg class="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <span class="text-sm text-gray-700">${file.name}</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            checkCanProcess() {
+                const canProcess = this.newFiles.length > 0 && this.oldFiles.length > 0;
+                document.getElementById('processBtn').disabled = !canProcess;
+            }
+            
+            log(message) {
+                const logContainer = document.getElementById('logContainer');
+                const timestamp = new Date().toLocaleTimeString();
+                logContainer.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+            
+            updateProgress(percent, message) {
+                document.getElementById('progressBar').style.width = `${percent}%`;
+                document.getElementById('progressText').textContent = message;
+            }
+            
+            async startProcessing() {
+                document.getElementById('progressSection').classList.remove('hidden');
+                document.getElementById('logSection').classList.remove('hidden');
+                document.getElementById('resultSection').classList.add('hidden');
+                
+                this.log('开始处理Excel文件...');
+                this.updateProgress(0, '初始化...');
+                
+                try {
+                    // 读取所有文件
+                    this.updateProgress(10, '读取文件...');
+                    const newData = await this.readExcelFiles(this.newFiles, 'New');
+                    this.updateProgress(30, '读取Old文件夹...');
+                    const oldData = await this.readExcelFiles(this.oldFiles, 'Old');
+                    
+                    // 处理数据
+                    this.updateProgress(50, '处理数据...');
+                    const processedResult = await this.processData(newData, oldData);
+                    
+                    // 生成结果
+                    this.updateProgress(80, '生成结果文件...');
+                    await this.generateResultFile(processedResult);
+                    
+                    this.updateProgress(100, '处理完成！');
+                    this.showResult(processedResult);
+                    
+                } catch (error) {
+                    this.log(`错误: ${error.message}`);
+                    alert('处理过程中出现错误，请检查文件格式和内容');
+                }
+            }
+            
+            async readExcelFiles(files, folderName) {
+                const result = {};
+                
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const fileName = file.name.replace('.xlsx', '');
+                    this.log(`读取${folderName}文件: ${file.name}`);
+                    
+                    const buffer = await file.arrayBuffer();
+                    const workbook = XLSX.read(buffer);
+                    
+                    result[fileName] = {};
+                    
+                    // 遍历所有不以$开头的工作表
+                    workbook.SheetNames.forEach(sheetName => {
+                        if (!sheetName.startsWith('$')) {
+                            const worksheet = workbook.Sheets[sheetName];
+                            const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                            result[fileName][sheetName] = this.processSheetData(data, sheetName);
+                        }
+                    });
+                }
+                
+                return result;
+            }
+            
+            processSheetData(data, sheetName) {
+                if (data.length < 6) return [];
+                
+                // 第5行作为列名（索引为4）
+                const headers = data[4] || [];
+                
+                // 找到Start和End的行
+                let startRow = -1, endRow = -1;
+                for (let i = 0; i < data.length; i++) {
+                    if (data[i][0] === 'Start' && startRow === -1) {
+                        startRow = i;
+                    }
+                    if (data[i][0] === 'End') {
+                        endRow = i;
+                    }
+                }
+                
+                if (startRow === -1 || endRow === -1 || startRow >= endRow) {
+                    return [];
+                }
+                
+                // 提取数据（包括Start和End行）
+                const result = [];
+                for (let i = startRow; i <= endRow; i++) {
+                    const row = data[i];
+                    if (row && row.length > 1) {
+                        const processedRow = {
+                            Sheet: sheetName,  // 第一列设为页签名
+                            ...headers.reduce((obj, header, index) => {
+                                if (header && index < row.length) {
+                                    obj[header] = row[index];
+                                }
+                                return obj;
+                            }, {})
+                        };
+                        
+                        // 以第2列作为id
+                        if (row[1] !== undefined) {
+                            processedRow.id = row[1];
+                        }
+                        
+                        result.push(processedRow);
+                    }
+                }
+                
+                return result;
+            }
+            
+            async processData(newData, oldData) {
+                this.log('开始数据对比...');
+                
+                const result = {
+                    totalProcessed: 0,
+                    newIds: {},
+                    summary: {}
+                };
+                
+                // 收集Old数据中的所有ID
+                const oldIds = new Set();
+                Object.keys(oldData).forEach(fileName => {
+                    Object.keys(oldData[fileName]).forEach(sheetName => {
+                        oldData[fileName][sheetName].forEach(row => {
+                            if (row.id !== undefined) {
+                                oldIds.add(row.id);
+                            }
+                        });
+                    });
+                });
+                
+                this.log(`Old文件夹中共找到 ${oldIds.size} 个唯一ID`);
+                
+                // 处理New数据中的每个文件
+                Object.keys(newData).forEach(fileName => {
+                    if (oldData[fileName]) {  // 只处理在Old中也存在的文件
+                        result.newIds[fileName] = [];
+                        let fileNewCount = 0;
+                        
+                        Object.keys(newData[fileName]).forEach(sheetName => {
+                            newData[fileName][sheetName].forEach(row => {
+                                result.totalProcessed++;
+                                if (row.id !== undefined && !oldIds.has(row.id)) {
+                                    result.newIds[fileName].push(row);
+                                    fileNewCount++;
+                                }
+                            });
+                        });
+                        
+                        result.summary[fileName] = fileNewCount;
+                        this.log(`文件 ${fileName}: 发现 ${fileNewCount} 条新数据`);
+                    }
+                });
+                
+                return result;
+            }
+            
+            async generateResultFile(processedResult) {
+                this.log('生成Excel文件...');
+                
+                const workbook = XLSX.utils.book_new();
+                
+                Object.keys(processedResult.newIds).forEach(fileName => {
+                    const data = processedResult.newIds[fileName];
+                    if (data.length > 0) {
+                        const worksheet = XLSX.utils.json_to_sheet(data);
+                        XLSX.utils.book_append_sheet(workbook, worksheet, fileName);
+                        this.log(`添加工作表: ${fileName} (${data.length} 行数据)`);
+                    }
+                });
+                
+                this.processedData = workbook;
+            }
+            
+            showResult(processedResult) {
+                document.getElementById('resultSection').classList.remove('hidden');
+                
+                const totalNewRecords = Object.values(processedResult.summary).reduce((sum, count) => sum + count, 0);
+                
+                const summaryHtml = `
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <div class="bg-blue-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-blue-600">${processedResult.totalProcessed}</div>
+                            <div class="text-sm text-gray-600">总处理记录数</div>
+                        </div>
+                        <div class="bg-green-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-green-600">${totalNewRecords}</div>
+                            <div class="text-sm text-gray-600">新增记录数</div>
+                        </div>
+                        <div class="bg-purple-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-purple-600">${Object.keys(processedResult.summary).length}</div>
+                            <div class="text-sm text-gray-600">处理文件数</div>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <h4 class="font-semibold mb-2">各文件新增统计:</h4>
+                        ${Object.entries(processedResult.summary).map(([fileName, count]) => 
+                            `<div class="flex justify-between bg-gray-50 p-2 rounded mb-1">
+                                <span>${fileName}</span>
+                                <span class="font-semibold">${count} 条</span>
+                            </div>`
+                        ).join('')}
+                    </div>
+                `;
+                
+                document.getElementById('resultSummary').innerHTML = summaryHtml;
+                this.log('处理完成！');
+            }
+            
+            downloadResult() {
+                if (!this.processedData) {
+                    alert('没有可下载的数据');
+                    return;
+                }
+                
+                const now = new Date();
+                const dateStr = now.toISOString().slice(0, 10);
+                const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+                const fileName = `_合版本提取表格_${dateStr}_${timeStr}.xlsx`;
+                
+                XLSX.writeFile(this.processedData, fileName);
+                this.log(`文件已下载: ${fileName}`);
+            }
+            
+            reset() {
+                this.newFiles = [];
+                this.oldFiles = [];
+                this.processedData = null;
+                
+                document.getElementById('newFiles').value = '';
+                document.getElementById('oldFiles').value = '';
+                document.getElementById('newFilesList').innerHTML = '';
+                document.getElementById('oldFilesList').innerHTML = '';
+                document.getElementById('logContainer').innerHTML = '';
+                
+                document.getElementById('progressSection').classList.add('hidden');
+                document.getElementById('logSection').classList.add('hidden');
+                document.getElementById('resultSection').classList.add('hidden');
+                
+                this.checkCanProcess();
+            }
+        }
+        
+        // 初始化应用
+        document.addEventListener('DOMContentLoaded', () => {
+            new ExcelProcessor();
+        });
+    </script>
+</body>
+</html>
