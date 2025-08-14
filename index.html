@@ -45,6 +45,24 @@
             border-color: #764ba2;
             background: rgba(102, 126, 234, 0.05);
         }
+        
+        .file-drop.dragover {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+            transform: scale(1.02);
+        }
+        
+        .file-drop.dragover-new {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+            transform: scale(1.02);
+        }
+        
+        .file-drop.dragover-old {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+            transform: scale(1.02);
+        }
     </style>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200">
@@ -65,16 +83,16 @@
                     New 文件夹
                 </h3>
                 <div class="file-drop rounded-lg p-6 text-center">
-                    <input type="file" id="newFiles" multiple accept=".xlsx" class="hidden">
+                    <input type="file" id="newFiles" webkitdirectory directory multiple accept=".xlsx" class="hidden">
                     <label for="newFiles" class="cursor-pointer">
                         <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                         </svg>
-                        <p class="text-gray-600">点击选择或拖拽Excel文件</p>
-                        <p class="text-sm text-gray-400 mt-1">支持 .xlsx 格式</p>
+                        <p class="text-gray-600">点击选择或拖拽文件夹</p>
+                        <p class="text-sm text-gray-400 mt-1">将自动上传文件夹内所有Excel文件</p>
                     </label>
                 </div>
-                <div id="newFilesList" class="mt-4"></div>
+                <div id="newFilesInfo" class="mt-4 text-center text-sm text-gray-600"></div>
             </div>
             
             <!-- Old文件夹 -->
@@ -86,16 +104,26 @@
                     Old 文件夹
                 </h3>
                 <div class="file-drop rounded-lg p-6 text-center">
-                    <input type="file" id="oldFiles" multiple accept=".xlsx" class="hidden">
+                    <input type="file" id="oldFiles" webkitdirectory directory multiple accept=".xlsx" class="hidden">
                     <label for="oldFiles" class="cursor-pointer">
                         <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                         </svg>
-                        <p class="text-gray-600">点击选择或拖拽Excel文件</p>
-                        <p class="text-sm text-gray-400 mt-1">支持 .xlsx 格式</p>
+                        <p class="text-gray-600">点击选择或拖拽文件夹</p>
+                        <p class="text-sm text-gray-400 mt-1">将自动上传文件夹内所有Excel文件</p>
                     </label>
                 </div>
-                <div id="oldFilesList" class="mt-4"></div>
+                <div id="oldFilesInfo" class="mt-4 text-center text-sm text-gray-600"></div>
+            </div>
+        </div>
+        
+        <!-- 使用说明 -->
+        <div class="neumorphism-inset rounded-xl p-4 mb-8 text-center">
+            <div class="flex items-center justify-center text-gray-600">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span class="text-sm">提示：选择文件夹后会自动扫描并上传该文件夹内的所有Excel文件（.xlsx 和 .xls 格式）</span>
             </div>
         </div>
         
@@ -164,6 +192,10 @@
                     this.handleFileSelection(e, 'old');
                 });
                 
+                // 添加拖拽文件夹支持
+                this.setupDragAndDrop('newFiles', 'new');
+                this.setupDragAndDrop('oldFiles', 'old');
+                
                 document.getElementById('processBtn').addEventListener('click', () => {
                     this.startProcessing();
                 });
@@ -177,31 +209,156 @@
                 });
             }
             
+            setupDragAndDrop(inputId, type) {
+                const input = document.getElementById(inputId);
+                const container = input.parentElement;
+                
+                container.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'copy';
+                    if (type === 'new') {
+                        container.classList.add('dragover-new');
+                    } else {
+                        container.classList.add('dragover-old');
+                    }
+                });
+                
+                container.addEventListener('dragleave', (e) => {
+                    container.classList.remove('dragover-new', 'dragover-old');
+                });
+                
+                container.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    container.classList.remove('dragover-new', 'dragover-old');
+                    
+                    // 检查是否有文件夹被拖拽
+                    const items = e.dataTransfer.items;
+                    let hasDirectory = false;
+                    
+                    if (items) {
+                        for (let i = 0; i < items.length; i++) {
+                            const item = items[i];
+                            if (item.kind === 'file') {
+                                const entry = item.webkitGetAsEntry();
+                                if (entry && entry.isDirectory) {
+                                    hasDirectory = true;
+                                    this.readDirectory(entry, type);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (!hasDirectory) {
+                        alert('请拖拽文件夹！');
+                    }
+                });
+            }
+            
+            async readDirectory(dirEntry, type) {
+                const files = [];
+                
+                const readEntries = (dir) => {
+                    return new Promise((resolve, reject) => {
+                        const reader = dir.createReader();
+                        const entries = [];
+                        
+                        const readNext = () => {
+                            reader.readEntries((results) => {
+                                if (results.length === 0) {
+                                    resolve(entries);
+                                } else {
+                                    entries.push(...results);
+                                    readNext();
+                                }
+                            }, reject);
+                        };
+                        
+                        readNext();
+                    });
+                };
+                
+                const processEntry = async (entry) => {
+                    if (entry.isFile) {
+                        const file = await this.getFileFromEntry(entry);
+                        if (file && (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls'))) {
+                            files.push(file);
+                        }
+                    } else if (entry.isDirectory) {
+                        const entries = await readEntries(entry);
+                        for (const subEntry of entries) {
+                            await processEntry(subEntry);
+                        }
+                    }
+                };
+                
+                try {
+                    await processEntry(dirEntry);
+                    
+                    if (type === 'new') {
+                        this.newFiles = files;
+                        this.displayFileInfo('newFilesInfo', files, 'New');
+                    } else {
+                        this.oldFiles = files;
+                        this.displayFileInfo('oldFilesInfo', files, 'Old');
+                    }
+                    
+                    this.checkCanProcess();
+                } catch (error) {
+                    console.error('读取文件夹失败:', error);
+                    alert('读取文件夹失败，请重试');
+                }
+            }
+            
+            getFileFromEntry(fileEntry) {
+                return new Promise((resolve, reject) => {
+                    fileEntry.file(resolve, reject);
+                });
+            }
+            
             handleFileSelection(event, type) {
-                const files = Array.from(event.target.files);
+                const files = Array.from(event.target.files).filter(file => 
+                    file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')
+                );
+                
+                if (files.length === 0) {
+                    alert('请选择包含Excel文件的文件夹！');
+                    return;
+                }
+                
                 if (type === 'new') {
                     this.newFiles = files;
-                    this.displayFileList('newFilesList', files);
+                    this.displayFileInfo('newFilesInfo', files, 'New');
                 } else {
                     this.oldFiles = files;
-                    this.displayFileList('oldFilesList', files);
+                    this.displayFileInfo('oldFilesInfo', files, 'Old');
                 }
                 
                 this.checkCanProcess();
             }
             
-            displayFileList(containerId, files) {
+            displayFileInfo(containerId, files, folderName) {
                 const container = document.getElementById(containerId);
-                container.innerHTML = files.map(file => `
-                    <div class="bg-white rounded-lg p-3 mb-2 shadow">
-                        <div class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                            </svg>
-                            <span class="text-sm text-gray-700">${file.name}</span>
+                if (files.length === 0) {
+                    container.innerHTML = '<span class="text-gray-400">未选择文件夹或文件夹内无Excel文件</span>';
+                } else {
+                    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+                    const sizeInMB = (totalSize / (1024 * 1024)).toFixed(2);
+                    
+                    container.innerHTML = `
+                        <div class="bg-green-50 p-3 rounded-lg">
+                            <div class="text-center">
+                                <div class="flex items-center justify-center mb-2">
+                                    <svg class="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                    </svg>
+                                    <span class="text-green-700 font-medium">已选择 ${files.length} 个Excel文件</span>
+                                </div>
+                                <div class="text-xs text-green-600">总大小: ${sizeInMB} MB</div>
+                            </div>
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }
             }
             
             checkCanProcess() {
@@ -448,8 +605,8 @@
                 
                 document.getElementById('newFiles').value = '';
                 document.getElementById('oldFiles').value = '';
-                document.getElementById('newFilesList').innerHTML = '';
-                document.getElementById('oldFilesList').innerHTML = '';
+                document.getElementById('newFilesInfo').innerHTML = '';
+                document.getElementById('oldFilesInfo').innerHTML = '';
                 document.getElementById('logContainer').innerHTML = '';
                 
                 document.getElementById('progressSection').classList.add('hidden');
