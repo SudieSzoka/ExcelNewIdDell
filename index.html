@@ -433,8 +433,13 @@
                             const worksheet = workbook.Sheets[sheetName];
                             const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
                             
-                            // 保存前6行数据
-                            firstSheetFirst6Rows = data.slice(0, 6);
+                            // 保存前6行数据，确保数据完整性
+                            firstSheetFirst6Rows = data.slice(0, 6).map(row => {
+                                if (Array.isArray(row)) {
+                                    return row.map(cell => cell !== undefined && cell !== null ? cell : '');
+                                }
+                                return row;
+                            });
                             foundFirstSheet = true;
                             
                             // 处理工作表数据
@@ -482,14 +487,15 @@
                         // 创建数组格式的行数据
                         const processedRow = [sheetName]; // 第一列设为页签名
                         
-                        // 添加其他列数据
+                        // 添加其他列数据，确保数据完整性
                         for (let j = 0; j < Math.max(headers.length, row.length); j++) {
                             if (j === 0) {
                                 // 第一列已经设置为页签名
                                 continue;
                             }
                             if (j < row.length) {
-                                processedRow.push(row[j]);
+                                // 确保数据不为undefined或null
+                                processedRow.push(row[j] !== undefined && row[j] !== null ? row[j] : '');
                             } else {
                                 processedRow.push('');
                             }
@@ -519,8 +525,8 @@
                 Object.keys(oldData).forEach(fileName => {
                     Object.keys(oldData[fileName]).forEach(sheetName => {
                         oldData[fileName][sheetName].forEach(row => {
-                            if (row._id !== undefined) {
-                                oldIds.add(row._id);
+                            if (row._id !== undefined && row._id !== null && row._id !== '') {
+                                oldIds.add(row._id.toString());
                             }
                         });
                     });
@@ -537,8 +543,10 @@
                         Object.keys(newData[fileName]).forEach(sheetName => {
                             newData[fileName][sheetName].forEach(row => {
                                 result.totalProcessed++;
-                                if (row._id !== undefined && !oldIds.has(row._id)) {
-                                    result.newIds[fileName].push(row);
+                                if (row._id !== undefined && row._id !== null && row._id !== '' && !oldIds.has(row._id.toString())) {
+                                    // 创建新的行数据，保持原有格式
+                                    const newRow = [...row];
+                                    result.newIds[fileName].push(newRow);
                                     fileNewCount++;
                                 }
                             });
@@ -596,6 +604,26 @@
                         
                         // 使用 XLSX.utils.aoa_to_sheet 来处理数组格式数据
                         const worksheet = XLSX.utils.aoa_to_sheet(newSheetData);
+                        
+                        // 设置列宽，确保数据能够正常显示
+                        const maxCols = Math.max(...newSheetData.map(row => row.length));
+                        const colWidths = [];
+                        for (let i = 0; i < maxCols; i++) {
+                            colWidths.push({ width: 15 }); // 设置默认列宽
+                        }
+                        worksheet['!cols'] = colWidths;
+                        
+                        // 设置行高，确保前6行有合适的行高
+                        const rowHeights = [];
+                        for (let i = 0; i < newSheetData.length; i++) {
+                            if (i < 6) {
+                                rowHeights.push({ hpt: 20 }); // 前6行设置20磅行高
+                            } else {
+                                rowHeights.push({ hpt: 16 }); // 其他行设置16磅行高
+                            }
+                        }
+                        worksheet['!rows'] = rowHeights;
+                        
                         XLSX.utils.book_append_sheet(workbook, worksheet, fileName);
                         this.log(`添加工作表: ${fileName} (${newSheetData.length} 行数据)`);
                     }
@@ -660,8 +688,11 @@
                     alert('没有可下载的数据');
                     return;
                 }
-                
-                const fileName = '_合版本提取表格.xlsm';
+                // 获取当前时间，精确到分
+                const now = new Date();
+                const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+                const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+                const fileName = `合版本提取数据_${dateStr}_${timeStr}.xlsx`;
                 
                 XLSX.writeFile(this.processedData, fileName);
                 this.log(`文件已下载: ${fileName}`);
