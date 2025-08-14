@@ -415,7 +415,7 @@
                 
                 for (let i = 0; i < files.length; i++) {
                     const file = files[i];
-                    const fileName = file.name.replace('.xlsx', '');
+                    const fileName = file.name.replace(/\.(xlsx|xls)$/i, '');
                     this.log(`读取${folderName}文件: ${file.name}`);
                     
                     const buffer = await file.arrayBuffer();
@@ -423,14 +423,31 @@
                     
                     result[fileName] = {};
                     
+                    // 保存前6行数据
+                    let firstSheetFirst6Rows = [];
+                    let foundFirstSheet = false;
+                    
                     // 遍历所有不以$开头的工作表
                     workbook.SheetNames.forEach(sheetName => {
-                        if (!sheetName.startsWith('$')) {
+                        if (!sheetName.startsWith('$') && !foundFirstSheet) {
+                            const worksheet = workbook.Sheets[sheetName];
+                            const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                            
+                            // 保存前6行数据
+                            firstSheetFirst6Rows = data.slice(0, 6);
+                            foundFirstSheet = true;
+                            
+                            // 处理工作表数据
+                            result[fileName][sheetName] = this.processSheetData(data, sheetName);
+                        } else if (!sheetName.startsWith('$')) {
                             const worksheet = workbook.Sheets[sheetName];
                             const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
                             result[fileName][sheetName] = this.processSheetData(data, sheetName);
                         }
                     });
+                    
+                    // 保存前6行数据到文件对象中
+                    file.firstSheetFirst6Rows = firstSheetFirst6Rows;
                 }
                 
                 return result;
@@ -462,20 +479,24 @@
                 for (let i = startRow; i <= endRow; i++) {
                     const row = data[i];
                     if (row && row.length > 1) {
-                        const processedRow = {
-                            Sheet: sheetName,  // 第一列设为页签名
-                            ...headers.reduce((obj, header, index) => {
-                                if (header && index < row.length) {
-                                    obj[header] = row[index];
-                                }
-                                return obj;
-                            }, {})
-                        };
+                        // 创建数组格式的行数据
+                        const processedRow = [sheetName]; // 第一列设为页签名
                         
-                        // 以第2列作为id
-                        if (row[1] !== undefined) {
-                            processedRow.id = row[1];
+                        // 添加其他列数据
+                        for (let j = 0; j < Math.max(headers.length, row.length); j++) {
+                            if (j === 0) {
+                                // 第一列已经设置为页签名
+                                continue;
+                            }
+                            if (j < row.length) {
+                                processedRow.push(row[j]);
+                            } else {
+                                processedRow.push('');
+                            }
                         }
+                        
+                        // 添加id信息（用于后续处理，但不包含在最终输出中）
+                        processedRow._id = row[1];
                         
                         result.push(processedRow);
                     }
@@ -498,8 +519,8 @@
                 Object.keys(oldData).forEach(fileName => {
                     Object.keys(oldData[fileName]).forEach(sheetName => {
                         oldData[fileName][sheetName].forEach(row => {
-                            if (row.id !== undefined) {
-                                oldIds.add(row.id);
+                            if (row._id !== undefined) {
+                                oldIds.add(row._id);
                             }
                         });
                     });
@@ -516,7 +537,7 @@
                         Object.keys(newData[fileName]).forEach(sheetName => {
                             newData[fileName][sheetName].forEach(row => {
                                 result.totalProcessed++;
-                                if (row.id !== undefined && !oldIds.has(row.id)) {
+                                if (row._id !== undefined && !oldIds.has(row._id)) {
                                     result.newIds[fileName].push(row);
                                     fileNewCount++;
                                 }
@@ -539,13 +560,64 @@
                 Object.keys(processedResult.newIds).forEach(fileName => {
                     const data = processedResult.newIds[fileName];
                     if (data.length > 0) {
-                        const worksheet = XLSX.utils.json_to_sheet(data);
+                        // 获取当前处理的Excel文件的第一个非$开头的页签的前6行
+                        const firstSheetData = this.getFirstSheetFirst6Rows(fileName);
+                        
+                        // 创建新的工作表数据
+                        const newSheetData = [];
+                        
+                        // 先添加前6行（保持原始数组格式）
+                        if (firstSheetData.length > 0) {
+                            newSheetData.push(...firstSheetData);
+                        }
+                        
+                        // 添加处理后的数据（排除id列）
+                        data.forEach(row => {
+                            // 直接使用数组格式的行数据
+                            newSheetData.push(row);
+                        });
+                        
+                        // 修改第一行第二列的内容为复制数据第一行的第一个列的值
+                        if (newSheetData.length > 0 && data.length > 0) {
+                            const firstDataRow = data[0];
+                            const firstColumnValue = firstDataRow[0] || ''; // 第一列的值
+                            
+                            // 确保第一行存在且至少有2列
+                            if (newSheetData[0] && Array.isArray(newSheetData[0])) {
+                                if (newSheetData[0].length < 2) {
+                                    // 如果第一行少于2列，扩展它
+                                    while (newSheetData[0].length < 2) {
+                                        newSheetData[0].push('');
+                                    }
+                                }
+                                newSheetData[0][1] = firstColumnValue;
+                            }
+                        }
+                        
+                        // 使用 XLSX.utils.aoa_to_sheet 来处理数组格式数据
+                        const worksheet = XLSX.utils.aoa_to_sheet(newSheetData);
                         XLSX.utils.book_append_sheet(workbook, worksheet, fileName);
-                        this.log(`添加工作表: ${fileName} (${data.length} 行数据)`);
+                        this.log(`添加工作表: ${fileName} (${newSheetData.length} 行数据)`);
                     }
                 });
                 
                 this.processedData = workbook;
+            }
+            
+            getFirstSheetFirst6Rows(fileName) {
+                // 从newFiles中找到对应的文件
+                const targetFile = this.newFiles.find(file => file.name.replace(/\.(xlsx|xls)$/i, '') === fileName);
+                if (!targetFile) return [];
+                
+                try {
+                    // 这里需要重新读取文件来获取前6行数据
+                    // 由于浏览器限制，我们需要在之前读取时保存这些数据
+                    // 修改readExcelFiles方法来保存前6行数据
+                    return targetFile.firstSheetFirst6Rows;
+                } catch (error) {
+                    this.log(`获取文件 ${fileName} 前6行数据失败: ${error.message}`);
+                    return [];
+                }
             }
             
             showResult(processedResult) {
@@ -589,10 +661,7 @@
                     return;
                 }
                 
-                const now = new Date();
-                const dateStr = now.toISOString().slice(0, 10);
-                const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
-                const fileName = `_合版本提取表格_${dateStr}_${timeStr}.xlsx`;
+                const fileName = '_合版本提取表格.xlsm';
                 
                 XLSX.writeFile(this.processedData, fileName);
                 this.log(`文件已下载: ${fileName}`);
